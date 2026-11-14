@@ -6,12 +6,26 @@ FLAGS = {"A": "实测", "M": "插补", "B": "可疑"}
 
 
 def parse_telegram_line(line: str):
+    """
+    返回 (parsed, reason)。
+    时刻段为空时 parsed 里 observed_at 为 None，reason 明确给出空时刻，
+    由服务端裁决为“观测时刻空着，不参与去重”，不进入任何站时刻去重。
+    """
     parts = [part.strip() for part in line.strip().split("|")]
     if len(parts) != 4:
         return None, "列数不是四段"
     station, stamp, tide, flag = parts
     if not STATION.match(station):
         return None, "站码应为两位字母加两位数字"
+    if stamp == "":
+        # 只标空时刻，不在这里判失败：由服务端去重裁决定性并记录站码
+        return {
+            "station_code": station,
+            "observed_at": None,
+            "tide_cm": None,
+            "quality_flag": None,
+            "flag_label": None,
+        }, None
     try:
         observed = datetime.strptime(stamp, "%Y%m%d%H%M")
     except ValueError:
