@@ -43,25 +43,46 @@
       </header>
 
       <section class="卷">
-        <div class="工具"><button class="按钮 青" id="关">关当前窗</button></div>
+        <h2>关窗收口</h2>
+        <p class="说明">本页只列<b>现行片集</b>。回退趟的片已退回趟前，不在此出现；收口回执与下表同票。</p>
+        <div id="收口"></div>
+      </section>
+      <section class="卷">
+        <div class="工具"><button class="按钮 青" id="关">关当前窗</button> <span id="回执条"></span></div>
         <div class="表绕"><table><thead><tr><th>切片编号</th><th>窗号</th><th>运单键</th><th>事件数</th><th>物化时</th></tr></thead><tbody id="表"></tbody></table></div>
       </section>
       <section class="卷">
         <div class="双栏">
-          <p class="说明">切片按运单聚合事件数。邻题空桩可改半截回滚/封印写闸，基线只做整窗物化。</p>
+          <p class="说明">切片按运单聚合事件数。失败收口走「形态一·窗封印指纹回退」：整趟退回，不留半物化。</p>
           <div class="侧注">去皮：关窗管道。勿抄对拍左右轨命名。</div>
         </div>
       </section>
       <script>
       async function 刷() {
-        const rows = await 潮切.getJSON("/api/窗切片账");
+        // 收口与下表取同一读事务快照，回执与页面集合同票
+        const 快 = await 潮切.getJSON("/api/关窗/快照");
+        const 收 = 快.收口 || {};
+        潮切.渲染收口(document.getElementById("收口"), 收);
+        const rows = 快.现行片 || [];
         const tb = document.getElementById("表"); tb.innerHTML = "";
-        if (!rows.length) { tb.innerHTML = `<tr><td colspan="5">${潮切.空态("尚无切片。装载窗内事件后点关当前窗。")}</td></tr>`; return; }
+        if (!rows.length) {
+          const tip = 收["形态"] === "回退"
+            ? `本趟回退（指纹 ${潮切.安全文本((收["失败指纹"] || "").slice(0, 8))}），现行片为空。修正后可再关窗。`
+            : "尚无切片。装载窗内事件后点关当前窗。";
+          tb.innerHTML = `<tr><td colspan="5">${潮切.空态(tip)}</td></tr>`; return;
+        }
         for (const r of rows) {
           tb.appendChild(潮切.行(`<td>${潮切.安全文本(r.切片编号)}</td><td>${潮切.安全文本(r.窗号)}</td><td>${潮切.安全文本(r.运单键)}</td><td>${r.事件数}</td><td>${潮切.安全文本(r.物化时)}</td>`));
         }
       }
-      document.getElementById("关").onclick = async () => { await 潮切.postJSON("/api/关窗/跑"); await 刷(); };
+      document.getElementById("关").onclick = async () => {
+        const 回 = await 潮切.postJSON("/api/关窗/跑");
+        const 条 = document.getElementById("回执条");
+        条.innerHTML = 潮切.收口徽章(回["形态"]) + " " + (回["形态"] === "回退"
+          ? "整趟退回，指纹 " + 潮切.安全文本((回["指纹"] || "").slice(0, 8))
+          : 潮切.安全文本(回["说明"] || ""));
+        await 刷();
+      };
       刷();
       </script>
 

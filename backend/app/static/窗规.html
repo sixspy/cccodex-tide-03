@@ -47,6 +47,12 @@
         <pre class="回执" id="规">加载中…</pre>
       </section>
       <section class="卷">
+        <h2>关窗收口</h2>
+        <p class="说明">当前策略：<b>形态一·窗封印指纹回退</b>。关窗失败整趟退回，封印账留失败指纹；可在此看收口口径与排障。「关窗故障」填 <code>物化半截</code> 可人为中断，置空恢复正常。</p>
+        <div id="收口"></div>
+        <pre class="回执" id="收口原文">加载中…</pre>
+      </section>
+      <section class="卷">
         <h2>空桩目录</h2>
         <p class="说明" id="空桩"></p>
         <div class="双栏">
@@ -57,6 +63,9 @@
       <script>
       (async () => {
         document.getElementById("规").textContent = JSON.stringify(await 潮切.getJSON("/api/窗规"), null, 2);
+        const 收 = await 潮切.getJSON("/api/关窗/收口");
+        潮切.渲染收口(document.getElementById("收口"), 收);
+        document.getElementById("收口原文").textContent = JSON.stringify(收, null, 2);
         const s = await 潮切.getJSON("/api/空桩");
         document.getElementById("空桩").textContent = "空桩 " + s.条数 + "：" + (s.空桩 || []).join(" · ");
       })();

@@ -51,11 +51,10 @@ def 缓冲列表() -> list[dict]:
 
 
 def 切片列表() -> list[dict]:
-    conn = 连接()
-    try:
-        return [dict(r) for r in conn.execute("SELECT * FROM 窗切片账 ORDER BY 物化时 DESC LIMIT 200").fetchall()]
-    finally:
-        conn.close()
+    """切片账与收口/贯验共用「现行片集」判据，不读半窗残片。"""
+    from app.services import 收口
+
+    return 收口.现行片()
 
 
 def 迟到列表() -> list[dict]:
@@ -75,14 +74,17 @@ def 贯验列表() -> list[dict]:
 
 
 def 概览() -> dict:
+    from app.services import 收口
+
     conn = 连接()
     try:
         return {
             "观测点": conn.execute("SELECT COUNT(*) AS c FROM 观测点").fetchone()["c"],
             "在缓冲": conn.execute("SELECT COUNT(*) AS c FROM 入窗缓冲 WHERE 命运='在缓冲'").fetchone()["c"],
-            "窗切片": conn.execute("SELECT COUNT(*) AS c FROM 窗切片账").fetchone()["c"],
+            "窗切片": len(收口.现行片()),
             "迟到": conn.execute("SELECT COUNT(*) AS c FROM 迟到匣").fetchone()["c"],
             "窗规": 窗规(),
+            "收口": 收口.当前收口(),
         }
     finally:
         conn.close()

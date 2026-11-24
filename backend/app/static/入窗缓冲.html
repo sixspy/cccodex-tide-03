@@ -43,16 +43,37 @@
       </header>
 
       <section class="卷">
+        <h2>关窗收口</h2>
+        <p class="说明">回退形态下缓冲全数退回「在缓冲」，本页条数与收口现行片数互为对照；失败指纹可回读。</p>
+        <div id="收口"></div>
+        <div class="工具">
+          <span id="收口注" class="说明"></span>
+        </div>
+      </section>
+      <section class="卷">
         <div class="表绕"><table><thead><tr><th>事件编号</th><th>运单键</th><th>窗号</th><th>事件时</th><th>命运</th></tr></thead><tbody id="表"></tbody></table></div>
       </section>
-      <section class="卷"><div class="双栏"><p class="说明">缓冲是关窗前的在途。关窗后命运应变为已物化，条数应下降。</p><div class="侧注">版式：左侧窗时间轴。对拍是顶栏双轨，肉眼应能分开。</div></div></section>
+      <section class="卷"><div class="双栏"><p class="说明">缓冲是关窗前的在途。关窗后命运应变为已物化，条数应下降；回退趟则整批留在缓冲。</p><div class="侧注">版式：左侧窗时间轴。对拍是顶栏双轨，肉眼应能分开。</div></div></section>
       <script>
       (async () => {
+        const 快 = await 潮切.getJSON("/api/关窗/快照");
+        const 收 = 快.收口 || {};
+        潮切.渲染收口(document.getElementById("收口"), 收);
+        const 注 = document.getElementById("收口注");
+        if (收["形态"] === "回退") {
+          注.innerHTML = `回退趟：失败指纹 ${潮切.安全文本((收["失败指纹"] || "—").slice(0, 12))} · ` +
+            `残片 ${收["残片数"] || 0} · 下次关窗前清场，缓冲整批退回。`;
+        } else if (收["清残片"]) {
+          注.textContent = `上次关窗清掉 ${收["清残片"]} 枚半窗残片。`;
+        } else {
+          注.textContent = "缓冲↔切片同票；关窗前后对照本页命运变化。";
+        }
         const rows = await 潮切.getJSON("/api/入窗缓冲");
         const tb = document.getElementById("表");
         if (!rows.length) { tb.innerHTML = `<tr><td colspan="5">${潮切.空态("缓冲为空。要么尚未装载，要么已经关窗物化。")}</td></tr>`; return; }
         for (const r of rows) {
-          tb.appendChild(潮切.行(`<td>${潮切.安全文本(r.事件编号)}</td><td>${潮切.安全文本(r.运单键)}</td><td>${潮切.安全文本(r.窗号)}</td><td>${潮切.安全文本(r.事件时)}</td><td>${潮切.徽章(r.命运)}</td>`));
+          const 类 = r.命运 === "已物化" ? "好" : (r.命运 === "在缓冲" ? "警" : "");
+          tb.appendChild(潮切.行(`<td>${潮切.安全文本(r.事件编号)}</td><td>${潮切.安全文本(r.运单键)}</td><td>${潮切.安全文本(r.窗号)}</td><td>${潮切.安全文本(r.事件时)}</td><td>${潮切.徽章(r.命运, 类)}</td>`));
         }
       })();
       </script>

@@ -28,7 +28,8 @@ CREATE TABLE IF NOT EXISTS 入窗缓冲 (
   事件时 TEXT NOT NULL,
   窗号 TEXT NOT NULL,
   命运 TEXT NOT NULL DEFAULT '在缓冲',
-  入缓冲时 TEXT NOT NULL
+  入缓冲时 TEXT NOT NULL,
+  趟号 TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS 窗切片账 (
   切片编号 TEXT PRIMARY KEY,
@@ -38,7 +39,8 @@ CREATE TABLE IF NOT EXISTS 窗切片账 (
   窗起 TEXT NOT NULL,
   窗止 TEXT NOT NULL,
   物化时 TEXT NOT NULL,
-  命运 TEXT NOT NULL DEFAULT '已成片'
+  命运 TEXT NOT NULL DEFAULT '已成片',
+  趟号 TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS 迟到匣 (
   编号 INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -48,6 +50,11 @@ CREATE TABLE IF NOT EXISTS 迟到匣 (
   事件时 TEXT NOT NULL,
   入匣时 TEXT NOT NULL
 );
+CREATE TABLE IF NOT EXISTS 切片事件 (
+  切片编号 TEXT NOT NULL,
+  事件编号 TEXT NOT NULL,
+  PRIMARY KEY (切片编号, 事件编号)
+);
 CREATE TABLE IF NOT EXISTS 窗贯验 (
   编号 INTEGER PRIMARY KEY AUTOINCREMENT,
   时刻 TEXT NOT NULL,
@@ -55,7 +62,34 @@ CREATE TABLE IF NOT EXISTS 窗贯验 (
   切片笔数 INTEGER NOT NULL,
   迟到笔数 INTEGER NOT NULL,
   是否对齐 INTEGER NOT NULL,
-  说明 TEXT NOT NULL
+  说明 TEXT NOT NULL,
+  形态 TEXT NOT NULL DEFAULT '',
+  现行片数 INTEGER NOT NULL DEFAULT 0,
+  归档键 TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS 关窗封印 (
+  编号 INTEGER PRIMARY KEY AUTOINCREMENT,
+  窗号 TEXT NOT NULL,
+  趟号 TEXT NOT NULL,
+  指纹 TEXT NOT NULL,
+  有效 INTEGER NOT NULL DEFAULT 0,
+  时刻 TEXT NOT NULL,
+  说明 TEXT NOT NULL DEFAULT ''
+);
+CREATE TABLE IF NOT EXISTS 关窗收口 (
+  编号 INTEGER PRIMARY KEY AUTOINCREMENT,
+  趟号 TEXT NOT NULL UNIQUE,
+  窗号 TEXT NOT NULL,
+  形态 TEXT NOT NULL,
+  现行片数 INTEGER NOT NULL DEFAULT 0,
+  归档键 TEXT NOT NULL DEFAULT '',
+  valid INTEGER NOT NULL DEFAULT 0,
+  失败指纹 TEXT NOT NULL DEFAULT '',
+  指纹 TEXT NOT NULL DEFAULT '',
+  清残片 INTEGER NOT NULL DEFAULT 0,
+  成片数 INTEGER NOT NULL DEFAULT 0,
+  时刻 TEXT NOT NULL,
+  说明 TEXT NOT NULL DEFAULT ''
 );
 CREATE TABLE IF NOT EXISTS 装载批次 (
   编号 TEXT PRIMARY KEY,
@@ -79,9 +113,50 @@ def 此刻() -> str:
     return datetime.now(timezone.utc).strftime("%Y-%m-%dT%H:%M:%SZ")
 
 
+def _补列(conn, 表: str, 列: str, 定义: str) -> None:
+    """旧库平滑补列（SQLite 无 ADD COLUMN IF NOT EXISTS）。"""
+    有 = {r["name"] for r in conn.execute(f"PRAGMA table_info({表})")}
+    if 列 not in 有:
+        conn.execute(f"ALTER TABLE {表} ADD COLUMN {列} {定义}")
+
+
+def _补旧切片事件(conn) -> None:
+    """旧库升级：基线时期的已成片没有切片事件挂接，按运单+窗种回挂，
+    避免新判据把它们当残片清掉。只补旧片（无任何切片事件者）。"""
+    旧片 = conn.execute(
+        """SELECT s.切片编号, s.窗号, s.运单键
+             FROM 窗切片账 s
+            WHERE s.命运='已成片'
+              AND NOT EXISTS (SELECT 1 FROM 切片事件 se WHERE se.切片编号=s.切片编号)
+              AND s.趟号 = ''"""
+    ).fetchall()
+    for 片 in 旧片:
+        事件 = conn.execute(
+            """SELECT 事件编号 FROM 入窗缓冲
+                WHERE 运单键=? AND 窗号=? AND 命运='已物化'
+                ORDER BY 事件时""",
+            (片["运单键"], 片["窗号"]),
+        ).fetchall()
+        for e in 事件:
+            conn.execute(
+                "INSERT OR IGNORE INTO 切片事件(切片编号,事件编号) VALUES (?,?)",
+                (片["切片编号"], e["事件编号"]),
+            )
+
+
 def 初始化库() -> None:
     conn = 连接()
+    conn.execute("PRAGMA journal_mode=WAL")
     conn.executescript(建表)
+    for 列, 定义 in (
+        ("形态", "TEXT NOT NULL DEFAULT ''"),
+        ("现行片数", "INTEGER NOT NULL DEFAULT 0"),
+        ("归档键", "TEXT NOT NULL DEFAULT ''"),
+    ):
+        _补列(conn, "窗贯验", 列, 定义)
+    _补列(conn, "入窗缓冲", "趟号", "TEXT NOT NULL DEFAULT ''")
+    _补列(conn, "窗切片账", "趟号", "TEXT NOT NULL DEFAULT ''")
+    _补旧切片事件(conn)
     if conn.execute("SELECT COUNT(*) AS c FROM 窗规").fetchone()["c"] == 0:
         for k, v in {
             "窗长秒": "3600",
